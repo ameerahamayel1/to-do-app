@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>To-Do App</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: system-ui, sans-serif; background: #f2f4f7; color: #1f2933; display: flex; justify-content: center; padding: 40px 16px; }
+    .card { width: 100%; max-width: 560px; background: #fff; border-radius: 14px; padding: 28px; box-shadow: 0 4px 20px rgba(0,0,0,.06); }
+    h1 { margin: 0 0 4px; font-size: 26px; }
+    .sub { margin: 0 0 22px; color: #6b7785; font-size: 14px; }
+    form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+    input[type=text] { padding: 11px 12px; border: 1px solid #d5dbe1; border-radius: 8px; font-size: 15px; }
+    button { cursor: pointer; border: 0; border-radius: 8px; font-size: 14px; padding: 10px 14px; }
+    .primary { background: #2563eb; color: #fff; font-weight: 600; }
+    .filters { display: flex; gap: 6px; margin-bottom: 14px; }
+    .filters button { background: #eef1f5; color: #3e4c59; }
+    .filters button.active { background: #1f2933; color: #fff; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; border-top: 1px solid #edf0f3; }
+    li input[type=checkbox] { margin-top: 4px; width: 18px; height: 18px; cursor: pointer; }
+    .text { flex: 1; min-width: 0; }
+    .title { font-weight: 600; word-break: break-word; }
+    .desc { color: #6b7785; font-size: 14px; margin-top: 2px; }
+    li.done .title { text-decoration: line-through; color: #9aa5b1; }
+    .actions { display: flex; gap: 6px; }
+    .actions button { padding: 6px 10px; font-size: 13px; background: #eef1f5; color: #3e4c59; }
+    .actions .del { background: #fdecec; color: #b42318; }
+    .empty { text-align: center; color: #9aa5b1; padding: 24px 0; }
+    .error { color: #b42318; font-size: 14px; min-height: 18px; margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>My To-Do List</h1>
+    <p class="sub">Node.js · Express · MongoDB</p>
+
+    <!-- CREATE -->
+    <form id="todo-form">
+      <input id="title" type="text" placeholder="What do you need to do?" maxlength="100" />
+      <input id="description" type="text" placeholder="Description (optional)" />
+      <button class="primary" type="submit">Add task</button>
+    </form>
+    <p class="error" id="error"></p>
+
+    <div class="filters">
+      <button data-filter="all" class="active">All</button>
+      <button data-filter="false">Active</button>
+      <button data-filter="true">Completed</button>
+    </div>
+
+    <!-- READ -->
+    <ul id="list"></ul>
+  </div>
+
+  <script>
+    const API = '/api/todos';
+    const list = document.getElementById('list');
+    const errorBox = document.getElementById('error');
+    let filter = 'all';
+
+    async function api(url, options = {}) {
+      const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Something went wrong');
+      return data;
+    }
+    function showError(msg = '') { errorBox.textContent = msg; }
+
+    // READ
+    async function loadTodos() {
+      try {
+        const url = filter === 'all' ? API : `${API}?completed=${filter}`;
+        render(await api(url));
+      } catch (err) { showError(err.message); }
+    }
+
+    function render(todos) {
+      list.innerHTML = todos.length ? '' : '<li class="empty">No tasks yet</li>';
+      todos.forEach((todo) => {
+        const li = document.createElement('li');
+        if (todo.completed) li.classList.add('done');
+
+        // UPDATE (completed)
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = todo.completed;
+        checkbox.onchange = () => updateTodo(todo._id, { completed: checkbox.checked });
+
+        const text = document.createElement('div');
+        text.className = 'text';
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = todo.title;
+        text.appendChild(title);
+        if (todo.description) {
+          const desc = document.createElement('div');
+          desc.className = 'desc';
+          desc.textContent = todo.description;
+          text.appendChild(desc);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        // UPDATE (edit)
+        const editBtn = document.createElement('button');
+        editBtn.textContent = 'Edit';
+        editBtn.onclick = () => {
+          const newTitle = prompt('New title:', todo.title);
+          if (newTitle === null) return;
+          const newDesc = prompt('New description:', todo.description);
+          updateTodo(todo._id, { title: newTitle, description: newDesc ?? todo.description });
+        };
+
+        // DELETE
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.className = 'del';
+        delBtn.onclick = () => deleteTodo(todo._id);
+
+        actions.append(editBtn, delBtn);
+        li.append(checkbox, text, actions);
+        list.appendChild(li);
+      });
+    }
+
+    // CREATE
+    document.getElementById('todo-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const titleInput = document.getElementById('title');
+      const descInput = document.getElementById('description');
+      try {
+        await api(API, { method: 'POST', body: JSON.stringify({ title: titleInput.value, description: descInput.value }) });
+        titleInput.value = '';
+        descInput.value = '';
+        showError();
+        loadTodos();
+      } catch (err) { showError(err.message); }
+    });
+
+    // UPDATE
+    async function updateTodo(id, changes) {
+      try {
+        await api(`${API}/${id}`, { method: 'PUT', body: JSON.stringify(changes) });
+        showError();
+        loadTodos();
+      } catch (err) { showError(err.message); }
+    }
+
+    // DELETE
+    async function deleteTodo(id) {
+      if (!confirm('Delete this task?')) return;
+      try {
+        await api(`${API}/${id}`, { method: 'DELETE' });
+        loadTodos();
+      } catch (err) { showError(err.message); }
+    }
+
+    document.querySelectorAll('.filters button').forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll('.filters button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        filter = btn.dataset.filter;
+        loadTodos();
+      };
+    });
+
+    loadTodos();
+  </script>
+</body>
+</html>
